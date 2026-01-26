@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+
+{% block title %}Compare Blogs - Blog Toolkit{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-12">
+        <h1>Compare Blogs</h1>
+    </div>
+</div>
+
+<div class="row mb-4">
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-body">
+                <form method="GET" action="/compare">
+                    <div class="row">
+                        <div class="col-md-5">
+                            <label for="blog1" class="form-label">Blog 1</label>
+                            <select class="form-select" id="blog1" name="blog1">
+                                <option value="">Select a blog...</option>
+                                {% for blog in blogs %}
+                                <option value="{{ blog.id }}" {% if selected_blog1 == blog.id %}selected{% endif %}>{{ blog.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-5">
+                            <label for="blog2" class="form-label">Blog 2</label>
+                            <select class="form-select" id="blog2" name="blog2">
+                                <option value="">Select a blog...</option>
+                                {% for blog in blogs %}
+                                <option value="{{ blog.id }}" {% if selected_blog2 == blog.id %}selected{% endif %}>{{ blog.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">&nbsp;</label>
+                            <button type="submit" class="btn btn-primary w-100">Compare</button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% if comparison %}
+<div class="row">
+    <div class="col-md-12">
+        <h3>Comparison Results</h3>
+    </div>
+</div>
+
+<div class="row mb-4">
+    <div class="col-md-12">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Metric</th>
+                    {% for blog_info in comparison.blogs %}
+                    <th>{{ blog_info.name }}</th>
+                    {% endfor %}
+                </tr>
+            </thead>
+            <tbody>
+                {% if comparison.metrics.temporal %}
+                <tr>
+                    <th colspan="{{ comparison.blogs|length + 1 }}" class="table-secondary">Temporal Metrics</th>
+                </tr>
+                {% for blog_info in comparison.blogs %}
+                {% if blog_info.id in comparison.metrics.temporal %}
+                {% set blog_metrics = comparison.metrics.temporal[blog_info.id] %}
+                <tr>
+                    <td>Total Posts ({{ blog_info.name }})</td>
+                    <td>{{ blog_metrics.total_posts }}</td>
+                </tr>
+                <tr>
+                    <td>Average Gap (days) ({{ blog_info.name }})</td>
+                    <td>{{ "%.1f"|format(blog_metrics.average_gap_days) }}</td>
+                </tr>
+                {% endif %}
+                {% endfor %}
+                {% endif %}
+                
+                {% if comparison.metrics.content %}
+                <tr>
+                    <th colspan="{{ comparison.blogs|length + 1 }}" class="table-secondary">Content Metrics</th>
+                </tr>
+                {% for blog_info in comparison.blogs %}
+                {% if blog_info.id in comparison.metrics.content %}
+                {% set blog_metrics = comparison.metrics.content[blog_info.id] %}
+                <tr>
+                    <td>Average Word Count ({{ blog_info.name }})</td>
+                    <td>{{ "%.0f"|format(blog_metrics.word_count.average) }}</td>
+                </tr>
+                <tr>
+                    <td>Total Words ({{ blog_info.name }})</td>
+                    <td>{{ "{:,}".format(blog_metrics.word_count.total) }}</td>
+                </tr>
+                {% endif %}
+                {% endfor %}
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

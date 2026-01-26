@@ -1,0 +1,162 @@
+{% extends "base.html" %}
+
+{% block title %}{{ blog.name }} - Blog Toolkit{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-12">
+        <h1>{{ blog.name }}</h1>
+        <p class="text-muted">
+            <a href="{{ blog.url }}" target="_blank">{{ blog.url }}</a>
+            {% if blog.author_name %}
+            | Author: <a href="/author/{{ blog.author_name }}">{{ blog.author_name }}</a>
+            {% endif %}
+        </p>
+    </div>
+</div>
+
+<div class="row mb-4">
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-header">
+                <h5>Blog Information</h5>
+            </div>
+            <div class="card-body">
+                <dl class="row">
+                    <dt class="col-sm-2">Collection Method:</dt>
+                    <dd class="col-sm-10"><span class="badge bg-secondary">{{ blog.collection_method }}</span></dd>
+                    <dt class="col-sm-2">Total Posts:</dt>
+                    <dd class="col-sm-10">{{ posts|length if posts else 0 }}</dd>
+                    <dt class="col-sm-2">Last Collected:</dt>
+                    <dd class="col-sm-10">{{ blog.last_collected_at.strftime('%Y-%m-%d %H:%M') if blog.last_collected_at else 'Never' }}</dd>
+                </dl>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% if analysis and 'error' not in analysis %}
+<div class="row mb-4">
+    <div class="col-md-12">
+        <h3>Analysis</h3>
+    </div>
+</div>
+
+{% if analysis.temporal and 'error' not in analysis.temporal %}
+<div class="row mb-4">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5>Temporal Metrics</h5>
+            </div>
+            <div class="card-body">
+                <p><strong>Date Range:</strong> {{ analysis.temporal.date_range_days }} days</p>
+                <p><strong>Average Gap:</strong> {{ "%.1f"|format(analysis.temporal.average_gap_days) }} days</p>
+                <p><strong>First Post:</strong> {{ analysis.temporal.first_post[:10] if analysis.temporal.first_post else 'N/A' }}</p>
+                <p><strong>Last Post:</strong> {{ analysis.temporal.last_post[:10] if analysis.temporal.last_post else 'N/A' }}</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div id="posts-over-time-chart"></div>
+    </div>
+</div>
+{% endif %}
+
+{% if analysis.content and 'error' not in analysis.content %}
+<div class="row mb-4">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5>Content Metrics</h5>
+            </div>
+            <div class="card-body">
+                <p><strong>Total Words:</strong> {{ "{:,}".format(analysis.content.word_count.total) }}</p>
+                <p><strong>Average Words:</strong> {{ "%.0f"|format(analysis.content.word_count.average) }}</p>
+                <p><strong>Avg Reading Time:</strong> {{ "%.1f"|format(analysis.content.reading_time.average_minutes) }} minutes</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div id="word-count-chart"></div>
+    </div>
+</div>
+{% endif %}
+
+{% if analysis.topics and 'error' not in analysis.topics %}
+<div class="row mb-4">
+    <div class="col-md-12">
+        <div id="keywords-chart"></div>
+    </div>
+</div>
+{% endif %}
+
+{% if analysis.sentiment and 'error' not in analysis.sentiment %}
+<div class="row mb-4">
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-header">
+                <h5>Sentiment Analysis</h5>
+            </div>
+            <div class="card-body">
+                <p><strong>Overall Sentiment:</strong> <span class="badge bg-{{ 'success' if analysis.sentiment.overall_sentiment == 'positive' else 'warning' if analysis.sentiment.overall_sentiment == 'neutral' else 'danger' }}">{{ analysis.sentiment.overall_sentiment.upper() }}</span></p>
+                <p><strong>Compound Score:</strong> {{ "%.3f"|format(analysis.sentiment.average_compound) }}</p>
+                <p><strong>Distribution:</strong> 
+                    Positive: {{ analysis.sentiment.sentiment_distribution.positive }}, 
+                    Neutral: {{ analysis.sentiment.sentiment_distribution.neutral }}, 
+                    Negative: {{ analysis.sentiment.sentiment_distribution.negative }}
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endif %}
+
+<div class="row">
+    <div class="col-md-12">
+        <h3>Posts</h3>
+        <table class="table table-hover">
+            <thead>
+                <tr>
+                    <th>Title</th>
+                    <th>Published</th>
+                    <th>Words</th>
+                    <th>Reading Time</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for post in posts %}
+                <tr>
+                    <td><a href="{{ post.url }}" target="_blank">{{ post.title }}</a></td>
+                    <td>{{ post.published_date.strftime('%Y-%m-%d') if post.published_date else 'N/A' }}</td>
+                    <td>{{ post.word_count or 'N/A' }}</td>
+                    <td>{{ post.reading_time or 'N/A' }} min</td>
+                    <td><a href="{{ post.url }}" target="_blank" class="btn btn-sm btn-outline-primary">View</a></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Load chart data
+    fetch('/blog/{{ blog.id }}/charts')
+        .then(response => response.json())
+        .then(charts => {
+            if (charts.posts_over_time) {
+                Plotly.newPlot('posts-over-time-chart', charts.posts_over_time.data, charts.posts_over_time.layout);
+            }
+            if (charts.word_count_trend) {
+                Plotly.newPlot('word-count-chart', charts.word_count_trend.data, charts.word_count_trend.layout);
+            }
+            if (charts.top_keywords) {
+                Plotly.newPlot('keywords-chart', charts.top_keywords.data, charts.top_keywords.layout);
+            }
+        });
+</script>
+{% endblock %}

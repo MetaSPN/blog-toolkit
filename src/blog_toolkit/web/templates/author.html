@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+
+{% block title %}{{ author_name }} - Blog Toolkit{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-12">
+        <h1>{{ author_name }}</h1>
+        <p class="text-muted">{{ blogs|length }} blog(s)</p>
+    </div>
+</div>
+
+{% if analysis and 'error' not in analysis %}
+<div class="row mb-4">
+    <div class="col-md-12">
+        <h3>Author Analysis</h3>
+    </div>
+</div>
+
+<div class="row mb-4">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5>Summary</h5>
+            </div>
+            <div class="card-body">
+                <p><strong>Total Blogs:</strong> {{ analysis.total_blogs }}</p>
+                <p><strong>Total Posts:</strong> {{ analysis.total_posts }}</p>
+            </div>
+        </div>
+    </div>
+    {% if analysis.content and 'error' not in analysis.content %}
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5>Content Metrics</h5>
+            </div>
+            <div class="card-body">
+                <p><strong>Total Words:</strong> {{ "{:,}".format(analysis.content.word_count.total) }}</p>
+                <p><strong>Average Words per Post:</strong> {{ "%.0f"|format(analysis.content.word_count.average) }}</p>
+                <p><strong>Avg Reading Time:</strong> {{ "%.1f"|format(analysis.content.reading_time.average_minutes) }} minutes</p>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+{% if analysis.cross_blog_comparison %}
+<div class="row mb-4">
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-header">
+                <h5>Cross-Blog Comparison</h5>
+            </div>
+            <div class="card-body">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Blog</th>
+                            <th>Posts</th>
+                            <th>Avg Word Count</th>
+                            <th>Total Words</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for blog_id, stats in analysis.cross_blog_comparison.items() %}
+                        <tr>
+                            <td><a href="/blog/{{ blog_id }}">{{ stats.blog_name }}</a></td>
+                            <td>{{ stats.post_count }}</td>
+                            <td>{{ "%.0f"|format(stats.avg_word_count) }}</td>
+                            <td>{{ "{:,}".format(stats.total_word_count) }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endif %}
+
+<div class="row">
+    <div class="col-md-12">
+        <h3>Blogs</h3>
+        <div class="row">
+            {% for item in blog_data %}
+            <div class="col-md-6 mb-3">
+                <div class="card">
+                    <div class="card-body">
+                        <h5 class="card-title"><a href="/blog/{{ item.blog.id }}">{{ item.blog.name }}</a></h5>
+                        <p class="card-text">
+                            <a href="{{ item.blog.url }}" target="_blank">{{ item.blog.url }}</a>
+                        </p>
+                        <p class="card-text">
+                            <small class="text-muted">{{ item.post_count }} posts</small>
+                        </p>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+{% endblock %}

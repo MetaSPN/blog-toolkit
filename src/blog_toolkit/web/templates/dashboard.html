@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - Blog Toolkit{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-12">
+        <h1>Dashboard</h1>
+    </div>
+</div>
+
+<div class="row mb-4">
+    <div class="col-md-4">
+        <div class="card stat-card">
+            <div class="card-body">
+                <h5 class="card-title">Total Blogs</h5>
+                <h2>{{ total_blogs }}</h2>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card stat-card">
+            <div class="card-body">
+                <h5 class="card-title">Total Posts</h5>
+                <h2>{{ total_posts }}</h2>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card stat-card">
+            <div class="card-body">
+                <h5 class="card-title">Authors</h5>
+                <h2>{{ total_authors }}</h2>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header">
+                <h5>Blogs</h5>
+            </div>
+            <div class="card-body">
+                {% if blog_data %}
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Name</th>
+                            <th>Author</th>
+                            <th>Posts</th>
+                            <th>Method</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in blog_data %}
+                        <tr>
+                            <td>{{ item.blog.id }}</td>
+                            <td><a href="/blog/{{ item.blog.id }}">{{ item.blog.name }}</a></td>
+                            <td>
+                                {% if item.blog.author_name %}
+                                <a href="/author/{{ item.blog.author_name }}">{{ item.blog.author_name }}</a>
+                                {% else %}
+                                N/A
+                                {% endif %}
+                            </td>
+                            <td>{{ item.post_count }}</td>
+                            <td><span class="badge bg-secondary">{{ item.blog.collection_method }}</span></td>
+                            <td>
+                                <a href="/blog/{{ item.blog.id }}" class="btn btn-sm btn-primary">View</a>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}
+                <p>No blogs yet. Use the CLI to add blogs.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">
+                <h5>Recent Posts</h5>
+            </div>
+            <div class="card-body">
+                {% if recent_posts %}
+                <ul class="list-group list-group-flush">
+                    {% for post in recent_posts %}
+                    <li class="list-group-item">
+                        <small class="text-muted">{{ post.published_date[:10] if post.published_date else 'N/A' }}</small><br>
+                        <strong>{{ post.blog_name }}</strong><br>
+                        <a href="{{ post.url }}" target="_blank">{{ post.title[:50] }}...</a>
+                    </li>
+                    {% endfor %}
+                </ul>
+                {% else %}
+                <p>No recent posts.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
