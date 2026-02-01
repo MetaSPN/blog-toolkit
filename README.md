@@ -24,6 +24,16 @@ cd blog-toolkit
 uv sync
 ```
 
+## Quick Pull (One-Off, No Install)
+
+Pull blog posts from any URL directly to a file—no database or setup:
+
+```bash
+uvx blog-toolkit pull https://example.substack.com -o ./posts.json
+```
+
+Requires [uv](https://github.com/astral-sh/uv). Output formats: `--format json` (default) or `--format csv`. Specify `-o` for output file or directory.
+
 ## Quick Start
 
 ### Using the CLI
@@ -150,6 +160,10 @@ Key settings:
 - **Author View**: Aggregate view of all blogs by an author
 - **Comparison View**: Side-by-side comparison of blogs
 - **Interactive Charts**: Plotly charts for trends and metrics
+
+## Documentation
+
+- **[Feed Extraction Workarounds](docs/FEED_EXTRACTION_WORKAROUNDS.md)** — Mechanisms for pulling RSS feed data from Substack and other platforms (platform limits, JS rendering, feed discovery, content parsing). Shareable guide for developers building similar tools.
 
 ## Development
 

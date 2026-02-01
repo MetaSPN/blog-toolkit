@@ -1,9 +1,10 @@
 """CLI interface for blog-toolkit."""
 
+import csv
 import json
 import logging
 import sys
-from datetime import datetime
+from pathlib import Path
 from typing import Optional
 
 import click
@@ -53,6 +54,72 @@ def add(url: str, method: str, author: Optional[str], name: Optional[str]):
     except Exception as e:
         click.echo(click.style(f"✗ Error: {e}", fg="red"), err=True)
         logger.exception("Error adding blog")
+        sys.exit(1)
+
+
+@main.command()
+@click.argument("url")
+@click.option("-o", "--output", "output_path", required=True, type=click.Path(), help="Output file or directory path")
+@click.option("--format", "fmt", type=click.Choice(["json", "csv"]), default=None, help="Output format (default: infer from file extension)")
+@click.option("--method", type=click.Choice(["rss", "crawler", "auto"]), default="auto", help="Collection method")
+def pull(url: str, output_path: str, fmt: Optional[str], method: str):
+    """Pull blog posts from a URL and write to file (no database required)."""
+    try:
+        collector = BlogCollector()
+        blog_name, posts = collector.pull_posts(url, method=method)
+
+        output = Path(output_path)
+
+        # Infer format from extension if not specified
+        if fmt is None:
+            if output.suffix.lower() in (".json",):
+                fmt = "json"
+            elif output.suffix.lower() in (".csv",):
+                fmt = "csv"
+            else:
+                fmt = "json"
+
+        # Resolve output file path: if directory or path with no extension, write posts.{fmt} inside
+        if output.suffix == "" or (output.exists() and output.is_dir()):
+            output = output / f"posts.{fmt}"
+
+        output.parent.mkdir(parents=True, exist_ok=True)
+
+        # Serialize posts for output (aligned with orange-tpot field names)
+        export_data = {
+            "blog": {"name": blog_name, "url": url},
+            "posts": [
+                _post_to_orange_tpot(p)
+                for p in posts
+            ],
+        }
+
+        if fmt == "json":
+            with open(output, "w") as f:
+                json.dump(export_data, f, indent=2, default=str)
+        else:
+            with open(output, "w", newline="") as f:
+                writer = csv.writer(f)
+                writer.writerow(["Blog", "Title", "URL", "Published Date", "Word Count", "Reading Time", "Tags"])
+                for p in export_data["posts"]:
+                    writer.writerow([
+                        blog_name,
+                        p["title"],
+                        p["link"],
+                        p["published"] or "",
+                        p.get("word_count") or "",
+                        p.get("reading_time") or "",
+                        ",".join(p.get("tags", [])),
+                    ])
+
+        click.echo(click.style(f"✓ Pulled {len(posts)} posts to {output}", fg="green"))
+
+    except ValueError as e:
+        click.echo(click.style(f"✗ {e}", fg="red"), err=True)
+        sys.exit(1)
+    except Exception as e:
+        click.echo(click.style(f"✗ Error: {e}", fg="red"), err=True)
+        logger.exception("Error pulling blog")
         sys.exit(1)
 
 
@@ -499,6 +566,26 @@ def push_metaspn(repo_path: str, blog_ids: Optional[str], user_id: Optional[str]
         click.echo(click.style(f"✗ Error: {e}", fg="red"), err=True)
         logger.exception("Error pushing to MetaSPN")
         sys.exit(1)
+
+
+def _post_to_orange_tpot(p: dict) -> dict:
+    """Convert internal post dict to orange-tpot expected format."""
+    url = p["url"]
+    published = p["published_date"].isoformat() if p.get("published_date") else None
+    return {
+        "title": p["title"],
+        "link": url,  # orange-tpot expects link or url
+        "url": url,
+        "content": p["content"],
+        "published": published,  # orange-tpot expects published/pub_date/published_at/date
+        "published_date": published,  # backward compatibility
+        "guid": url,  # orange-tpot uses guid/id for deduplication
+        "author": p.get("author"),
+        "word_count": p.get("word_count"),
+        "reading_time": p.get("reading_time"),
+        "tags": p.get("tags", []),
+        "categories": p.get("categories", []),
+    }
 
 
 def _display_analysis(results: dict):

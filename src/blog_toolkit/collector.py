@@ -182,6 +182,79 @@ class BlogCollector:
         logger.info(f"Added {added_count} new posts to blog {blog.name}")
         return added_count
     
+    def pull_posts(
+        self,
+        blog_url: str,
+        method: str = "auto",
+        blog_name: Optional[str] = None,
+        author_name: Optional[str] = None,
+    ) -> Tuple[str, List[dict]]:
+        """
+        Collect posts from a blog without persisting to database.
+        
+        Args:
+            blog_url: URL of the blog
+            method: Collection method ('auto', 'rss', 'crawler')
+            blog_name: Name of the blog (auto-detected if not provided)
+            author_name: Name of the author (optional)
+        
+        Returns:
+            Tuple of (blog_name, list of normalized post dicts)
+        
+        Raises:
+            ValueError: If no posts could be collected
+        """
+        logger.info(f"Pulling posts from: {blog_url} (method: {method})")
+        
+        if method == "auto":
+            method = self._detect_best_method(blog_url)
+        
+        if not blog_name:
+            blog_name = self._extract_blog_name(blog_url)
+        
+        posts = []
+        feed_url = None
+        
+        if method == "rss":
+            feed_url, posts = self._collect_via_rss(blog_url, supplement_with_crawler=True)
+        elif method == "crawler":
+            posts = self._collect_via_crawler(blog_url)
+        else:
+            feed_url, posts = self._collect_via_rss(blog_url, supplement_with_crawler=True)
+            if not posts:
+                logger.info(f"RSS collection failed, trying crawler for {blog_url}")
+                posts = self._collect_via_crawler(blog_url)
+        
+        if not posts:
+            raise ValueError(f"Failed to collect any posts from {blog_url}")
+        
+        normalized = []
+        for post_data in posts:
+            content = post_data.get("content")
+            if content and is_html(content):
+                content = clean_html(content, preserve_structure=True)
+            
+            word_count = None
+            reading_time = None
+            if content:
+                word_count = len(content.split())
+                reading_time = max(1, word_count // 200)
+            
+            normalized.append({
+                "title": post_data["title"],
+                "url": post_data["url"],
+                "content": content,
+                "published_date": post_data.get("published_date"),
+                "author": post_data.get("author") or author_name,
+                "word_count": word_count,
+                "reading_time": reading_time,
+                "tags": post_data.get("tags", []),
+                "categories": post_data.get("categories", []),
+                "metadata": post_data.get("metadata", {}),
+            })
+        
+        return blog_name, normalized
+    
     def _detect_best_method(self, blog_url: str) -> str:
         """Detect the best collection method for a blog."""
         # Try to discover RSS feed
