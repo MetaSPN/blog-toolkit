@@ -22,7 +22,7 @@ RUN npm install -g agent-browser \
 
 # Copy project
 WORKDIR /app
-COPY pyproject.toml uv.lock ./
+COPY pyproject.toml uv.lock README.md ./
 COPY src ./src
 
 # Install blog-toolkit
