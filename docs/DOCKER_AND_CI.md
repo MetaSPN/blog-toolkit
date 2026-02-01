@@ -2,9 +2,35 @@
 
 Run blog-toolkit with agent-browser in Docker or GitHub Actions for full Substack crawling (beyond the ~20-post RSS limit).
 
+## Published Image (GHCR)
+
+The image is published to GitHub Container Registry. Use it in other projects without building:
+
+```bash
+# Pull and run (no build required)
+docker pull ghcr.io/OWNER/blog-toolkit:latest
+docker run --rm -i --ipc=host \
+  -v $(pwd)/output:/out \
+  ghcr.io/OWNER/blog-toolkit:latest \
+  pull https://example.substack.com/ -o /out/posts.json
+```
+
+Replace `OWNER` with the GitHub org or username (e.g. `leoguinan`). Tags: `latest` (main branch), `main`, and version tags on releases.
+
+**Making the package public:** GHCR packages are private by default. To allow unauthenticated pulls: repo → Packages → blog-toolkit → Package settings → Change visibility → Public.
+
+### Publish workflow: `.github/workflows/publish-docker.yml`
+
+Builds and pushes the image to `ghcr.io/OWNER/blog-toolkit` on:
+- Push to `main` (when Dockerfile, src, or pyproject changes)
+- Release published (creates version tags)
+- Manual trigger
+
+---
+
 ## Docker
 
-### Build
+### Build locally
 
 ```bash
 docker build -t blog-toolkit .

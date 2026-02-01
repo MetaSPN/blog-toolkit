@@ -164,7 +164,7 @@ Key settings:
 ## Documentation
 
 - **[Feed Extraction Workarounds](docs/FEED_EXTRACTION_WORKAROUNDS.md)** — Mechanisms for pulling RSS feed data from Substack and other platforms (platform limits, JS rendering, feed discovery, content parsing). Shareable guide for developers building similar tools.
-- **[Docker and GitHub Actions](docs/DOCKER_AND_CI.md)** — Run blog-toolkit with agent-browser in Docker or GitHub Actions for full Substack crawling (beyond the ~20-post RSS limit).
+- **[Docker and GitHub Actions](docs/DOCKER_AND_CI.md)** — Run blog-toolkit with agent-browser in Docker or GitHub Actions for full Substack crawling (beyond the ~20-post RSS limit). Published image: `ghcr.io/OWNER/blog-toolkit:latest`.
 
 ## Development
 
