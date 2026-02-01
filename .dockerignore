@@ -1,0 +1,32 @@
+# Git
+.git
+.gitignore
+
+# Python
+.venv
+__pycache__
+*.py[cod]
+*.egg-info
+.pytest_cache
+.mypy_cache
+.ruff_cache
+
+# Data and env
+data
+.env
+.env.*
+
+# IDE and OS
+.vscode
+.idea
+.DS_Store
+
+# Docs and tests (not needed in runtime image)
+docs
+tests
+*.md
+!README.md
+
+# Build artifacts
+dist
+build

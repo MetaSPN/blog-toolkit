@@ -1,0 +1,73 @@
+# Pull blog feeds using blog-toolkit + agent-browser (Docker)
+# Runs on schedule and/or manual trigger. Outputs JSON to artifacts.
+
+name: Pull Feeds
+
+on:
+  workflow_dispatch:
+    inputs:
+      feeds:
+        description: "Comma-separated blog URLs to pull (or use feeds.yaml)"
+        required: false
+        default: ""
+  schedule:
+    # Daily at 06:00 UTC
+    - cron: "0 6 * * *"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/pull-feeds.yml"
+      - "feeds.txt"
+
+jobs:
+  pull:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build blog-toolkit image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: blog-toolkit:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Get feed URLs
+        run: |
+          if [ -n "${{ github.event.inputs.feeds }}" ]; then
+            echo "${{ github.event.inputs.feeds }}" | tr ',' '\n' | sed 's/^ *//;s/ *$//' | grep -v '^$' > urls.txt
+          elif [ -f feeds.txt ]; then
+            cp feeds.txt urls.txt
+          else
+            echo "https://michaelgarfield.substack.com/" > urls.txt
+          fi
+          echo "Feeds to pull:"
+          cat urls.txt
+
+      - name: Pull feeds
+        run: |
+          mkdir -p output
+          while IFS= read -r url || [ -n "$url" ]; do
+            [ -z "$url" ] && continue
+            # Sanitize filename from URL
+            name=$(echo "$url" | sed 's|https\?://||;s|[^a-zA-Z0-9.-]|-|g' | cut -c1-50)
+            echo "Pulling $url -> output/${name}.json"
+            docker run --rm -i --ipc=host \
+              -v ${{ github.workspace }}/output:/out \
+              blog-toolkit:latest \
+              pull "$url" -o "/out/${name}.json" || echo "Failed: $url"
+          done < urls.txt
+
+      - name: Upload feed outputs
+        uses: actions/upload-artifact@v4
+        with:
+          name: feed-outputs
+          path: output/
+          retention-days: 30
