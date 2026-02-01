@@ -3,11 +3,12 @@
 
 FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim
 
-# Install Node.js and agent-browser dependencies (Chromium needs system libs)
+# Install Node.js, sudo (for agent-browser install --with-deps), and Chromium deps
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     ca-certificates \
     gnupg \
+    sudo \
     && mkdir -p /etc/apt/keyrings \
     && curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg \
     && echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x nodistro main" >> /etc/apt/sources.list.d/nodesource.list \
