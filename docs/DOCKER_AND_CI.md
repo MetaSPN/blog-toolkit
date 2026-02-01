@@ -1,6 +1,6 @@
 # Docker and GitHub Actions
 
-Run blog-toolkit with agent-browser in Docker or GitHub Actions for full Substack crawling (beyond the ~20-post RSS limit).
+Run blog-toolkit in Docker or GitHub Actions. Substack: uses sitemap for full archive (300+ posts, no browser needed).
 
 ## Published Image (GHCR)
 
@@ -60,9 +60,7 @@ done
 ### What's included
 
 - Python 3.12 + uv
-- blog-toolkit (RSS + crawler)
-- Node.js + agent-browser + Chromium (for Substack JS rendering)
-- System dependencies for Chromium on Linux
+- blog-toolkit (RSS, sitemap, web crawler)
 
 ---
 
@@ -114,8 +112,8 @@ First run builds the Docker image (~5–10 min). Subsequent runs use GHA cache f
 |-------------|-------|
 | **Local Docker** | Docker with enough memory for Chromium (~2GB recommended) |
 | **GitHub Actions** | `ubuntu-latest` runner (includes Docker) |
-| **Substack** | agent-browser required for full archive (RSS returns ~20 posts only) |
-| **Other blogs** | RSS-only works without agent-browser |
+| **Substack** | RSS + sitemap (300+ posts, no browser) |
+| **Other blogs** | RSS or static HTML crawl |
 
 ---
 
@@ -126,12 +124,6 @@ First run builds the Docker image (~5–10 min). Subsequent runs use GHA cache f
 - Ensure `--ipc=host` when running Docker
 - For GHA, the default runner should be sufficient; if timeouts occur, increase `timeout-minutes`
 
-### agent-browser not found
-
-- Verify the Docker image built correctly: `docker run --rm blog-toolkit which agent-browser`
-- The image includes `agent-browser install --with-deps` during build
-
 ### Slow Substack crawl
 
-- Substack archive uses infinite scroll; the crawler scrolls 15+ times with 3s delays
-- Expect 1–3 minutes per Substack blog depending on post count
+- Sitemap fetches each post page; at 1s delay, 200 posts ≈ 3–4 minutes

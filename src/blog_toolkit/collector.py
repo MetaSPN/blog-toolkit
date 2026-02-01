@@ -59,6 +59,8 @@ class BlogCollector:
             feed_url, posts = self._collect_via_rss(blog_url, supplement_with_crawler=True)
         elif method == "crawler":
             posts = self._collect_via_crawler(blog_url)
+        elif method == "sitemap":
+            posts = self._collect_via_sitemap(blog_url)
         else:
             # Try RSS first, supplement with crawler if limited, fall back to crawler if RSS fails
             feed_url, posts = self._collect_via_rss(blog_url, supplement_with_crawler=True)
@@ -188,6 +190,7 @@ class BlogCollector:
         method: str = "auto",
         blog_name: Optional[str] = None,
         author_name: Optional[str] = None,
+        max_posts: Optional[int] = None,
     ) -> Tuple[str, List[dict]]:
         """
         Collect posts from a blog without persisting to database.
@@ -219,6 +222,8 @@ class BlogCollector:
             feed_url, posts = self._collect_via_rss(blog_url, supplement_with_crawler=True)
         elif method == "crawler":
             posts = self._collect_via_crawler(blog_url)
+        elif method == "sitemap":
+            posts = self._collect_via_sitemap(blog_url, max_posts=max_posts or 200)
         else:
             feed_url, posts = self._collect_via_rss(blog_url, supplement_with_crawler=True)
             if not posts:
@@ -296,7 +301,7 @@ class BlogCollector:
         # This handles Ghost (15), Substack (20), and other limits
         is_substack = "substack.com" in (blog_url or feed_url_or_blog_url).lower()
         
-        # For Substack with agent-browser available, always do full browser crawl
+        # For Substack, always supplement with sitemap (RSS limited to ~20)
         # since we know it uses JS rendering and RSS is limited
         if supplement_with_crawler and rss_count > 0:
             # Determine blog URL from feed URL if not provided
@@ -304,10 +309,10 @@ class BlogCollector:
                 blog_url = feed_data.get("link") or feed_url.replace("/rss/", "/").replace("/feed", "/").replace("/rss", "/").rstrip("/")
             
             if blog_url:
-                if is_substack and self.crawler._agent_browser_path:
-                    # For Substack, skip quick check and go straight to full browser crawl
-                    logger.info(f"RSS feed returned {rss_count} posts. Substack detected with agent-browser - performing full browser crawl...")
-                    crawled_posts = self.crawler.crawl_substack_with_browser(blog_url, max_posts=200)
+                if is_substack:
+                    # Substack: use sitemap for full archive (RSS limited to ~20)
+                    logger.info(f"RSS feed returned {rss_count} posts. Substack detected - supplementing via sitemap...")
+                    crawled_posts = self.crawler.crawl_substack_via_sitemap(blog_url, max_posts=200)
                 else:
                     # For other sites, do quick check first
                     logger.info(f"RSS feed returned {rss_count} posts. Quick-checking if more posts are available...")
@@ -337,6 +342,10 @@ class BlogCollector:
     def _collect_via_crawler(self, blog_url: str) -> List[dict]:
         """Collect posts via web crawler."""
         return self.crawler.crawl_blog(blog_url)
+
+    def _collect_via_sitemap(self, blog_url: str, max_posts: Optional[int] = 200) -> List[dict]:
+        """Collect posts via Substack sitemap (Substack only, no browser needed)."""
+        return self.crawler.crawl_substack_via_sitemap(blog_url, max_posts=max_posts)
     
     def _extract_blog_name(self, blog_url: str) -> str:
         """Extract blog name from URL."""

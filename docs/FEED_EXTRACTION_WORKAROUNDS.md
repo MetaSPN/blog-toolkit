@@ -19,7 +19,7 @@ RSS feeds are the obvious choice for collecting blog content—until they fail. 
 
 1. Use RSS first when available—it's fast and reliable for recent posts
 2. Supplement with crawler when RSS is limited (platform-specific strategies)
-3. For JS-heavy platforms (Substack), use a headless browser when needed
+3. For Substack, use sitemap to bypass RSS limits (no browser needed)
 4. Probe feed discovery heuristics; validate with Content-Type checks
 5. Normalize content and dates across feed formats
 
@@ -27,7 +27,7 @@ RSS feeds are the obvious choice for collecting blog content—until they fail. 
 
 ## Substack-Specific Workarounds
 
-Substack is the trickiest platform. RSS works but is severely limited; the archive page requires JavaScript rendering and infinite-scroll handling.
+Substack RSS is limited to ~20 posts. Use the sitemap to get the full archive.
 
 ### RSS Feed Limitations
 
@@ -35,61 +35,18 @@ Substack is the trickiest platform. RSS works but is severely limited; the archi
 - Cannot be circumvented via feed pagination—Substack does not support it
 - Feed URL is typically `{blog}.substack.com/feed`
 
-**Strategy**: Use RSS for the first 20 posts, then supplement with a browser-based crawl for the full archive.
+**Strategy**: Use RSS for the first 20 posts (with full content), then supplement via sitemap for the rest.
 
-### JavaScript Rendering
+### Sitemap (Primary Method)
 
-Substack's archive and list pages are heavily JS-rendered. A simple `requests.get()` + BeautifulSoup returns incomplete HTML—post links may be missing or only partially present.
+Substack exposes `sitemap.xml` with hundreds of post URLs—no browser needed.
 
-**Workaround**: Use a headless browser (we use [agent-browser](https://github.com/agent-browser/agent-browser)) to render the page before extraction.
+- **URL**: `{blog}.substack.com/sitemap.xml`
+- **Parse**: Extract `<loc>` tags with regex; filter for `/p/` and blog domain
+- **Content**: Fetch each post page (server-rendered); extract title, date, article body
+- **Use**: `--method sitemap` or collector auto-supplements when Substack detected
 
-**Fallback**: Some Substack pages embed `/p/` links in the initial HTML. When a browser is unavailable, scrape `a[href*="/p/"]` as a best-effort fallback. Results will be incomplete for larger archives.
-
-### Post Discovery Strategy
-
-- **Use `/archive` first**—Substack's archive page (`{blog}.substack.com/archive`) often has a better post listing than the homepage
-- **Post URL pattern**: `{blog}.substack.com/p/{slug}`—search for links containing `/p/`
-
-### DOM Extraction (When Using Browser)
-
-Run this in the browser context to extract post links:
-
-```javascript
-(function() {
-    const allLinks = Array.from(document.querySelectorAll('a[href*="/p/"]'));
-    const seenUrls = new Set();
-    const posts = [];
-    
-    allLinks.forEach(link => {
-        const href = link.href || link.getAttribute('href');
-        if (href && href.includes('/p/') && !seenUrls.has(href)) {
-            seenUrls.add(href);
-            let title = link.textContent.trim();
-            if (!title || title.length < 3) {
-                const parent = link.closest('article, [class*="post"], [class*="Post"]');
-                if (parent) {
-                    const titleElem = parent.querySelector('h1, h2, h3, h4, h5, [class*="title"], [class*="Title"]');
-                    if (titleElem) title = titleElem.textContent.trim();
-                }
-            }
-            posts.push({ url: href, title: title || 'Untitled' });
-        }
-    });
-    return posts;
-})();
-```
-
-### Lazy Loading (Infinite Scroll)
-
-Substack archive uses infinite scroll; content loads as the user scrolls.
-
-- **Workaround**: Scroll down 15+ times with ~3 second delays between scrolls to trigger loading
-- Re-run DOM extraction after each scroll batch to capture newly loaded posts
-- Deduplicate by URL before merging results
-
-### Modal/Popup Handling
-
-Newsletter signup modals can block content or interfere with extraction. Try to dismiss them (e.g., click "No thanks") before running the extraction script.
+Post URL pattern: `{blog}.substack.com/p/{slug}`
 
 ---
 
@@ -170,7 +127,7 @@ Probe with HEAD; verify `Content-Type`; only then attempt to parse.
 
 | Platform | RSS Limit | Strategy |
 |----------|-----------|----------|
-| Substack | ~20 | If headless browser available: always full browser crawl; merge with RSS. Otherwise: RSS only, accept partial data. |
+| Substack | ~20 | RSS + sitemap supplement; merge by URL. |
 | Ghost | ~15 | Quick crawl check (first 3 pages); if more posts found, run full crawler and merge. |
 | Generic | Varies | Quick check first 3 pages; supplement if `crawled_count > rss_count`. |
 
@@ -201,7 +158,7 @@ When extracting full post content from HTML (e.g., from feed `content:encoded` o
 
 ## CMS-Specific Crawler Selectors
 
-When falling back to static HTML crawl (no headless browser), use platform-specific CSS selectors. These are best-effort; platform DOM changes will break them.
+When crawling non-Substack sites via static HTML, use platform-specific CSS selectors. These are best-effort; platform DOM changes will break them.
 
 ### Substack
 
@@ -243,8 +200,8 @@ When falling back to static HTML crawl (no headless browser), use platform-speci
 
 | Challenge | What Works |
 |-----------|------------|
-| Substack limited to 20 posts | RSS + browser crawl; merge by URL |
-| Substack JS-rendered archive | Headless browser; scroll + re-extract for lazy load |
+| Substack limited to 20 posts | RSS + sitemap supplement (`--method sitemap` or auto) for 300+ posts |
+| Substack full archive | Sitemap; fetch each post page |
 | Substack post links | Query `a[href*="/p/"]` in DOM |
 | Feed discovery | HTML link tags + common path heuristics |
 | Content in feeds | Check `content`, `summary`, `description` in order |

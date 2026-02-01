@@ -1,6 +1,6 @@
 [project]
 name = "blog-toolkit"
-version = "0.1.2"
+version = "0.1.3"
 description = "A toolkit for collecting, storing, and analyzing multiple blogs with RSS feed and web crawler support"
 readme = "README.md"
 authors = [

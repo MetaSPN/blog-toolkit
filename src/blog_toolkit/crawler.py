@@ -1,8 +1,7 @@
 """Web crawler for blog posts."""
 
-import json
 import logging
-import subprocess
+import re
 import time
 from datetime import datetime
 from typing import List, Optional, Set
@@ -76,301 +75,119 @@ class BlogCrawler:
         self.delay = Config.REQUEST_DELAY
         self.max_depth = Config.CRAWLER_MAX_DEPTH
         self.visited_urls: Set[str] = set()
-        self._agent_browser_path = self._find_agent_browser()
-    
-    def _find_agent_browser(self) -> Optional[str]:
-        """Find agent-browser executable."""
-        try:
-            result = subprocess.run(
-                ["which", "agent-browser"],
-                capture_output=True,
-                text=True,
-                timeout=2,
-            )
-            if result.returncode == 0 and result.stdout.strip():
-                return result.stdout.strip()
-        except Exception:
-            pass
-        return None
-    
-    def crawl_substack_with_browser(self, blog_url: str, max_posts: Optional[int] = None) -> List[dict]:
+
+    def crawl_substack_via_sitemap(
+        self, blog_url: str, max_posts: Optional[int] = None
+    ) -> List[dict]:
         """
-        Crawl Substack blog using agent-browser to handle JavaScript rendering.
-        
-        Args:
-            blog_url: Base URL of the Substack blog
-            max_posts: Maximum number of posts to extract
-        
-        Returns:
-            List of post dictionaries
+        Crawl Substack via sitemap.xml - gets full post list without browser.
+        Substack sitemaps typically contain hundreds of post URLs.
         """
-        if not self._agent_browser_path:
-            logger.warning("agent-browser not found, falling back to regular crawler")
-            return self.crawl_blog(blog_url, max_posts)
-        
-        posts = []
-        blog_url = blog_url.rstrip("/")
-        seen_urls = set()
-        
+        blog_url = blog_url.rstrip("/").replace("/archive", "").replace("/feed", "")
+        if "substack.com" not in blog_url.lower():
+            return []
+
+        sitemap_url = f"{blog_url}/sitemap.xml"
+        post_urls = []
+        seen = set()
+
         try:
-            # Use agent-browser to get rendered page
-            logger.info(f"Using agent-browser to crawl Substack: {blog_url}")
-            
-            # Try archive page first (Substack often has better post listing there)
-            archive_url = f"{blog_url}/archive"
-            
-            # Open the archive page if it exists, otherwise use main page
-            result = subprocess.run(
-                [self._agent_browser_path, "open", archive_url],
-                capture_output=True,
-                timeout=30,
-            )
-            
-            # If archive page doesn't work, try main page
-            if result.returncode != 0:
-                subprocess.run(
-                    [self._agent_browser_path, "open", blog_url],
-                    capture_output=True,
-                    timeout=30,
-                )
-            
-            # Wait for page to load
-            time.sleep(3)
-            
-            # Dismiss any modals/popups
-            try:
-                # Try to click "No thanks" or close button
-                subprocess.run(
-                    [self._agent_browser_path, "find", "text", "No thanks", "click"],
-                    capture_output=True,
-                    timeout=5,
-                )
-                time.sleep(1)
-            except:
-                pass
-            
-            # Use JavaScript to extract post links from the DOM
-            # More comprehensive search for Substack post links
-            js_code = """
-            (function() {
-                const allLinks = Array.from(document.querySelectorAll('a[href*="/p/"]'));
-                const seenUrls = new Set();
-                const posts = [];
-                
-                allLinks.forEach(link => {
-                    const href = link.href || link.getAttribute('href');
-                    if (href && href.includes('/p/') && !seenUrls.has(href)) {
-                        seenUrls.add(href);
-                        let title = link.textContent.trim();
-                        if (!title || title.length < 3) {
-                            // Try to find title in nearby elements
-                            const parent = link.closest('article, [class*="post"], [class*="Post"]');
-                            if (parent) {
-                                const titleElem = parent.querySelector('h1, h2, h3, h4, h5, [class*="title"], [class*="Title"]');
-                                if (titleElem) title = titleElem.textContent.trim();
-                            }
-                        }
-                        posts.push({
-                            url: href,
-                            title: title || 'Untitled'
-                        });
-                    }
-                });
-                return posts;
-            })();
-            """
-            
-            result = subprocess.run(
-                [self._agent_browser_path, "eval", js_code, "--json"],
-                capture_output=True,
-                text=True,
-                timeout=30,
-            )
-            
-            logger.debug(f"agent-browser eval output: {result.stdout[:500]}")
-            
-            if result.returncode == 0:
+            resp = requests.get(sitemap_url, timeout=self.timeout)
+            if resp.status_code != 200:
+                return []
+
+            # Parse sitemap - extract <loc> URLs (no lxml required)
+            text = resp.content.decode("utf-8", errors="ignore")
+            locs = re.findall(r"<loc>\s*([^<]+)\s*</loc>", text, re.IGNORECASE)
+            blog_domain = urlparse(blog_url).netloc or blog_url.replace("https://", "").replace("http://", "").split("/")[0]
+            for loc in locs:
+                url = loc.strip() if isinstance(loc, str) else (loc.get_text(strip=True) if hasattr(loc, "get_text") else "")
+                if url and "/p/" in url and blog_domain in url and url not in seen:
+                    seen.add(url)
+                    post_urls.append(url)
+
+            # If sitemap index (lists other sitemaps), follow child sitemaps
+            if not post_urls and locs:
+                for loc in locs[:5]:
+                    child_url = loc.strip() if isinstance(loc, str) else (loc.get_text(strip=True) if hasattr(loc, "get_text") else "")
+                    if child_url and "sitemap" in child_url and "sitemap.xml" not in child_url:
+                        time.sleep(self.delay)
+                        cr = requests.get(child_url, timeout=self.timeout)
+                        if cr.status_code == 200:
+                            ctext = cr.content.decode("utf-8", errors="ignore")
+                            for u in re.findall(r"<loc>\s*([^<]+)\s*</loc>", ctext, re.IGNORECASE):
+                                u = u.strip()
+                                if u and "/p/" in u and blog_domain in u and u not in seen:
+                                    seen.add(u)
+                                    post_urls.append(u)
+
+            if max_posts:
+                post_urls = post_urls[:max_posts]
+
+            logger.info(f"Found {len(post_urls)} post URLs from Substack sitemap")
+
+            posts = []
+            for url in post_urls:
                 try:
-                    # Parse the JSON output - agent-browser might wrap it
-                    output = result.stdout.strip()
-                    
-                    # Try to parse as JSON directly first
-                    try:
-                        data = json.loads(output)
-                        # If it's wrapped in a response object
-                        if isinstance(data, dict) and "data" in data:
-                            data_obj = data["data"]
-                            # Check if there's a "result" key (agent-browser format)
-                            if isinstance(data_obj, dict) and "result" in data_obj:
-                                post_links = data_obj["result"]
-                            elif isinstance(data_obj, list):
-                                post_links = data_obj
-                            else:
-                                post_links = []
-                        elif isinstance(data, list):
-                            post_links = data
-                        else:
-                            post_links = []
-                    except json.JSONDecodeError:
-                        # Try to extract JSON from the output
-                        output_lines = output.split('\n')
-                        json_line = None
-                        for line in output_lines:
-                            stripped = line.strip()
-                            if (stripped.startswith('{') or stripped.startswith('[')) and ('url' in stripped or 'title' in stripped):
-                                json_line = stripped
-                                break
-                        
-                        if json_line:
-                            post_links = json.loads(json_line)
-                        else:
-                            # Last resort: try to find JSON in the output
-                            import re
-                            json_match = re.search(r'\[.*\]', output, re.DOTALL)
-                            if json_match:
-                                post_links = json.loads(json_match.group())
-                            else:
-                                post_links = []
-                    
-                    # Ensure post_links is a list
-                    if not isinstance(post_links, list):
-                        post_links = []
-                    
-                    logger.debug(f"Found {len(post_links)} post links from JavaScript")
-                    
-                    for item in post_links:
-                        if isinstance(item, dict):
-                            url = item.get("url", "")
-                            if url and "/p/" in url and url not in seen_urls:
-                                seen_urls.add(url)
-                                posts.append({
-                                    "title": item.get("title", "Untitled"),
-                                    "url": url,
-                                    "content": None,
-                                    "published_date": None,
-                                    "author": None,
-                                    "tags": [],
-                                    "categories": [],
-                                    "metadata": {},
-                                })
-                                
-                                if max_posts and len(posts) >= max_posts:
-                                    break
-                    
-                    # Scroll and get more posts if needed
-                    # Substack uses lazy loading, so we need to scroll and wait
-                    if not max_posts or len(posts) < max_posts:
-                        previous_count = len(posts)
-                        no_change_count = 0
-                        
-                        for scroll_num in range(15):  # Scroll more times for Substack
-                            subprocess.run(
-                                [self._agent_browser_path, "scroll", "down", "3000"],
-                                capture_output=True,
-                                timeout=10,
-                            )
-                            time.sleep(3)  # Wait longer for lazy loading to complete
-                            
-                            # Get updated links
-                            result = subprocess.run(
-                                [self._agent_browser_path, "eval", js_code, "--json"],
-                                capture_output=True,
-                                text=True,
-                                timeout=30,
-                            )
-                            
-                            if result.returncode == 0:
-                                try:
-                                    output = result.stdout.strip()
-                                    try:
-                                        data = json.loads(output)
-                                        if isinstance(data, dict) and "data" in data:
-                                            data_obj = data["data"]
-                                            if isinstance(data_obj, dict) and "result" in data_obj:
-                                                post_links = data_obj["result"]
-                                            elif isinstance(data_obj, list):
-                                                post_links = data_obj
-                                            else:
-                                                post_links = []
-                                        elif isinstance(data, list):
-                                            post_links = data
-                                        else:
-                                            post_links = []
-                                    except json.JSONDecodeError:
-                                        output_lines = output.split('\n')
-                                        json_line = None
-                                        for line in output_lines:
-                                            stripped = line.strip()
-                                            if (stripped.startswith('{') or stripped.startswith('[')) and ('url' in stripped or 'title' in stripped):
-                                                json_line = stripped
-                                                break
-                                        
-                                        if json_line:
-                                            post_links = json.loads(json_line)
-                                        else:
-                                            import re
-                                            json_match = re.search(r'\[.*\]', output, re.DOTALL)
-                                            if json_match:
-                                                post_links = json.loads(json_match.group())
-                                            else:
-                                                post_links = []
-                                    
-                                    if not isinstance(post_links, list):
-                                        post_links = []
-                                    
-                                    for item in post_links:
-                                        if isinstance(item, dict):
-                                            url = item.get("url", "")
-                                            if url and "/p/" in url and url not in seen_urls:
-                                                seen_urls.add(url)
-                                                posts.append({
-                                                    "title": item.get("title", "Untitled"),
-                                                    "url": url,
-                                                    "content": None,
-                                                    "published_date": None,
-                                                    "author": None,
-                                                    "tags": [],
-                                                    "categories": [],
-                                                    "metadata": {},
-                                                })
-                                                
-                                                if max_posts and len(posts) >= max_posts:
-                                                    break
-                                except Exception as e:
-                                    logger.debug(f"Error parsing scroll results: {e}")
-                            
-                            if max_posts and len(posts) >= max_posts:
-                                break
-                    
-                except json.JSONDecodeError as e:
-                    logger.error(f"Failed to parse agent-browser eval JSON: {e}")
-                    logger.debug(f"Output was: {result.stdout[:500]}")
+                    resp = requests.get(url, timeout=self.timeout)
+                    resp.raise_for_status()
+                    soup = BeautifulSoup(resp.content, "html.parser")
+
+                    title_elem = soup.find("h1") or soup.find("title")
+                    title = title_elem.get_text(strip=True) if title_elem else "Untitled"
+
+                    date_elem = soup.find("time", {"datetime": True})
+                    published_date = None
+                    if date_elem and date_elem.get("datetime"):
+                        try:
+                            published_date = date_parser.parse(date_elem["datetime"])
+                        except (ValueError, TypeError):
+                            pass
+
+                    content = None
+                    for sel in ["article", ".post-content", ".entry-content", "main", "[role='main']"]:
+                        elem = soup.select_one(sel)
+                        if elem:
+                            for tag in elem(["script", "style", "nav", "header", "footer"]):
+                                tag.decompose()
+                            content = elem.get_text(separator="\n", strip=True)
+                            break
+                    if not content and soup.find("body"):
+                        body = soup.find("body")
+                        for tag in body(["script", "style", "nav", "header", "footer"]):
+                            tag.decompose()
+                        content = body.get_text(separator="\n", strip=True)
+
+                    posts.append({
+                        "title": title,
+                        "url": url,
+                        "content": content,
+                        "published_date": published_date,
+                        "author": None,
+                        "tags": [],
+                        "categories": [],
+                        "metadata": {},
+                    })
                 except Exception as e:
-                    logger.error(f"Error parsing agent-browser results: {e}")
-            
-            # Close browser (ensure it's closed even if there was an error)
-            try:
-                subprocess.run(
-                    [self._agent_browser_path, "close"],
-                    capture_output=True,
-                    timeout=10,
-                )
-            except:
-                pass  # Ignore errors when closing
-            
-            logger.info(f"Crawled {len(posts)} Substack posts using agent-browser")
-            
-        except subprocess.TimeoutExpired:
-            logger.error("agent-browser command timed out")
-        except FileNotFoundError:
-            logger.error("agent-browser not found in PATH")
+                    logger.debug(f"Error fetching post {url}: {e}")
+                    posts.append({
+                        "title": "Untitled",
+                        "url": url,
+                        "content": None,
+                        "published_date": None,
+                        "author": None,
+                        "tags": [],
+                        "categories": [],
+                        "metadata": {},
+                    })
+                time.sleep(self.delay)
+
+            return posts
+
         except Exception as e:
-            logger.error(f"Error using agent-browser: {e}")
-            # Fall back to regular crawler
-            return self.crawl_blog(blog_url, max_posts)
-        
-        return posts
-    
+            logger.error(f"Error crawling Substack sitemap: {e}")
+            return []
+
     def quick_crawl_check(self, blog_url: str, rss_post_count: int, max_pages_to_check: int = 3) -> tuple[bool, int]:
         """
         Quick check to see if there are more posts than RSS feed returned.
@@ -383,21 +200,22 @@ class BlogCrawler:
         Returns:
             Tuple of (has_more_posts, total_posts_found)
         """
-        # For Substack, use browser-based check
-        # Since Substack uses JS rendering, if browser finds posts, we should do full crawl
-        if "substack.com" in blog_url.lower() and self._agent_browser_path:
+        # For Substack, quick sitemap URL count (RSS is always limited to ~20)
+        if "substack.com" in blog_url.lower():
             try:
-                # Quick check: just see if we can find any posts at all
-                # If yes, it means browser is needed and RSS is limited
-                posts = self.crawl_substack_with_browser(blog_url, max_posts=10)  # Just check first 10
-                found_count = len(posts)
-                # If browser found any posts, RSS is definitely limited (Substack limits to 20)
-                has_more = found_count > 0  # Any posts found means we need full crawl
-                logger.info(f"Quick browser check found {found_count} posts (RSS had {rss_post_count})")
-                return has_more, found_count
+                base = blog_url.rstrip("/").replace("/archive", "").replace("/feed", "")
+                resp = requests.get(f"{base}/sitemap.xml", timeout=self.timeout)
+                if resp.status_code == 200:
+                    locs = re.findall(r"<loc>\s*([^<]+)\s*</loc>", resp.content.decode("utf-8", errors="ignore"), re.IGNORECASE)
+                    parsed = urlparse(base if "://" in base else f"https://{base}")
+                    blog_domain = parsed.netloc or base
+                    count = sum(1 for u in locs if "/p/" in u and blog_domain in u)
+                    has_more = count > rss_post_count
+                    logger.info(f"Substack sitemap has {count} posts (RSS had {rss_post_count})")
+                    return has_more, count
             except Exception as e:
-                logger.warning(f"Browser-based quick check failed: {e}, falling back to regular check")
-        
+                logger.debug(f"Sitemap check failed: {e}")
+
         # Regular quick check for other sites
         self.visited_urls.clear()
         posts = []
@@ -437,10 +255,10 @@ class BlogCrawler:
         Returns:
             List of post dictionaries
         """
-        # For Substack, use browser-based crawler
-        if "substack.com" in blog_url.lower() and self._agent_browser_path:
-            return self.crawl_substack_with_browser(blog_url, max_posts)
-        
+        # For Substack, use sitemap (reliable, no browser needed)
+        if "substack.com" in blog_url.lower():
+            return self.crawl_substack_via_sitemap(blog_url, max_posts)
+
         self.visited_urls.clear()
         posts = []
         

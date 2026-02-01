@@ -1,4 +1,4 @@
-# Pull blog feeds using blog-toolkit + agent-browser (Docker)
+# Pull blog feeds using blog-toolkit (Docker)
 # Runs on schedule and/or manual trigger. Outputs JSON to artifacts.
 
 name: Pull Feeds

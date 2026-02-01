@@ -61,12 +61,13 @@ def add(url: str, method: str, author: Optional[str], name: Optional[str]):
 @click.argument("url")
 @click.option("-o", "--output", "output_path", required=True, type=click.Path(), help="Output file or directory path")
 @click.option("--format", "fmt", type=click.Choice(["json", "csv"]), default=None, help="Output format (default: infer from file extension)")
-@click.option("--method", type=click.Choice(["rss", "crawler", "auto"]), default="auto", help="Collection method")
-def pull(url: str, output_path: str, fmt: Optional[str], method: str):
+@click.option("--method", type=click.Choice(["rss", "crawler", "sitemap", "auto"]), default="auto", help="Collection method (sitemap=Substack only, gets full archive)")
+@click.option("--max-posts", type=int, default=None, help="Max posts to pull (sitemap/crawler only; default 200)")
+def pull(url: str, output_path: str, fmt: Optional[str], method: str, max_posts: Optional[int]):
     """Pull blog posts from a URL and write to file (no database required)."""
     try:
         collector = BlogCollector()
-        blog_name, posts = collector.pull_posts(url, method=method)
+        blog_name, posts = collector.pull_posts(url, method=method, max_posts=max_posts)
 
         output = Path(output_path)
 
